@@ -1,0 +1,64 @@
+.route-frame {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--st-border-color, #d3dfd7);
+    border-radius: 16px;
+    overflow: hidden;
+}
+.route-canvas {
+    height: clamp(260px, 38vh, 390px);
+    background: #e9eeea;
+}
+.route-canvas-park { height: clamp(310px, 43vh, 440px); }
+.route-reset {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1001;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-content: center;
+    color: #194c42;
+    background: white;
+    border: 1px solid #c8d5cc;
+    border-radius: 10px;
+    box-shadow: 0 2px 7px #1d302b24;
+    cursor: pointer;
+}
+.route-reset:disabled { opacity: 0.6; cursor: wait; }
+.route-reset:focus-visible { outline: 3px solid #126e62; outline-offset: 2px; }
+.route-reset:hover:not(:disabled) { background: #e7f3eb; }
+.route-reset span { font: 27px/1 system-ui, sans-serif; }
+.route-status {
+    position: absolute;
+    z-index: 1001;
+    left: 50%;
+    top: 14px;
+    width: max-content;
+    max-width: 65%;
+    transform: translateX(-50%);
+    background: #fff;
+    color: #194c42;
+    padding: 6px 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 7px #1d302b24;
+    font-size: 0.82rem;
+}
+.route-marker {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    background: #126e62;
+    color: white;
+    border: 2px solid white;
+    border-radius: 50%;
+    box-shadow: 0 2px 5px #1d302b45;
+    font-weight: 700;
+}
+.route-stop { background: #984920; }
+.route-marker-start { background: #223d61; outline: 2px solid #223d61; }
+.route-marker-blocked { background: #99451b; outline: 2px dashed #99451b; }
+.route-popup { line-height: 1.5; }
+.route-popup strong { font-size: 0.88rem; }
+.route-popup-next { margin-top: 6px; }

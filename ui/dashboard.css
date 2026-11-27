@@ -1,0 +1,76 @@
+[data-testid="stMainBlockContainer"] {
+    padding-top: 3.5rem;
+}
+
+[data-testid="stMain"] h1 {
+    font-size: 2.7rem;
+    line-height: 1.1;
+    letter-spacing: -0.033em;
+}
+
+[data-testid="stMain"] h1 .material-symbols-rounded {
+    color: var(--st-primary-color, #0f685b);
+}
+
+[data-testid="stMain"] h3 {
+    line-height: 1.18;
+    letter-spacing: -0.024em;
+}
+
+.st-key-itinerary-welcome {
+    margin-top: 1rem;
+    padding: 1.6rem 1.85rem;
+    border: 1px solid var(--st-border-color, #d4ded5);
+    border-radius: 1rem;
+    background: #f0f4ec;
+}
+
+.st-key-itinerary-welcome p {
+    max-width: 62ch;
+}
+
+.detour-score {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    padding: 0.4rem 0 0.6rem;
+    border-bottom: 1px solid var(--st-border-color, #d4ded5);
+}
+
+.detour-score-label { font-size: 0.9rem; }
+
+.detour-score-number {
+    font-size: 1.5rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-score-number small { font-size: 0.8rem; font-weight: 500; }
+
+.detour-stars {
+    position: relative;
+    color: #c0cbbf;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+
+.detour-stars span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    overflow: hidden;
+    white-space: nowrap;
+    color: #965324;
+}
+
+[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+
+[data-testid="stApp"] ::selection { background: #cde7d6; color: #17392f; }
+
+@media (max-width: 640px) {
+    [data-testid="stMainBlockContainer"] { padding-top: 2.6rem; }
+    [data-testid="stMain"] h1 { font-size: 2.1rem; }
+    .st-key-itinerary-welcome { padding: 1.1rem 1.25rem; }
+}
