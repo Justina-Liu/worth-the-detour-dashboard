@@ -1,0 +1,33 @@
+{
+  "schema": "day-decision-v2",
+  "case_id": "sample-transfer-transport",
+  "received_date": "2026-11-26",
+  "day_title": "Day 2 — Change hotels",
+  "transport_mode": "rideshare",
+  "limits": {
+    "trip_budget": 3000, "baseline_spend": 2200, "extra_transport_cap": 100,
+    "available_minutes": 600, "baseline_minutes": 90, "minimum_rest": 240
+  },
+  "locks": [
+    {"text": "09:00 Check out from the Anaheim hotel", "start": 540, "end": null},
+    {"text": "17:00–18:00 Check in near Universal City", "start": 1020, "end": 1080}
+  ],
+  "weights": [45, 25, 30],
+  "candidates": [
+    {
+      "name": "Waterfront visit", "start": 660, "visit_minutes": 120, "travel_minutes": 108,
+      "transport_cost": 55, "activity_cost": 0, "luggage": true, "point": [33.768, -118.195],
+      "interest": 5, "route_fit": 2
+    },
+    {
+      "name": "Short stop near the hotel", "start": 810, "visit_minutes": 55, "travel_minutes": 15,
+      "transport_cost": 10, "activity_cost": 0, "point": [34.137, -118.352],
+      "interest": 3, "route_fit": 5
+    },
+    {
+      "name": "Late museum visit", "start": 960, "visit_minutes": 90, "travel_minutes": 40,
+      "transport_cost": 25, "activity_cost": 20, "notes": "Check last admission.",
+      "interest": 4, "route_fit": 3
+    }
+  ]
+}
