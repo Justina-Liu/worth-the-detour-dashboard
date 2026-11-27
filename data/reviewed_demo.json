@@ -1,0 +1,68 @@
+{
+  "run_id": "run-20261126-203646-436f36",
+  "raw_filename": "09_disneyland_guardians_conflict.json",
+  "processed_at": "2026-11-27T02:36:46+00:00",
+  "case_id": "demo-disneyland-guardians-conflict",
+  "received_date": "2026-11-26",
+  "candidate_name": "Day 2 — Disney California Adventure",
+  "recommendation": "Keep the original plan for now. Review the scores and any conflicts below.",
+  "recommended_option": "keep_original",
+  "metrics": {
+    "trip_budget": 850,
+    "reputation_in_score": false
+  },
+  "conflicts": [],
+  "warnings": [],
+  "options": [
+    {
+      "option_id": "keep_original",
+      "label": "Keep original plan",
+      "score": null,
+      "extra_cost": 0,
+      "extra_minutes": 0,
+      "rest_minutes": 175,
+      "trip_spend": 720,
+      "budget_left": 130,
+      "hard_conflicts": [],
+      "notes": [],
+      "transport_mode": null,
+      "transport": "Undecided"
+    },
+    {
+      "option_id": "option_1",
+      "label": "Guardians of the Galaxy – Mission: BREAKOUT!",
+      "score": 83.8,
+      "components": {
+        "Worth visiting": 100,
+        "Route fit": 100,
+        "Time cost": 46.2
+      },
+      "extra_cost": 0,
+      "extra_minutes": 70,
+      "rest_minutes": 105,
+      "trip_spend": 720,
+      "budget_left": 130,
+      "start": 690,
+      "end": 760,
+      "notes": [
+        "Try a later slot if this ride is a priority. This option starts between scheduled activities and overlaps lunch."
+      ],
+      "replaces": null,
+      "transport_mode": null,
+      "transport": "Undecided",
+      "hard_conflicts": [
+        "Overlaps locked activity: 12:00–13:00 Lunch reservation · Locked in this example"
+      ]
+    }
+  ],
+  "reviewer_checks": {
+    "option_count": true,
+    "review_evidence": true,
+    "baseline": true,
+    "option_1_transport": true,
+    "option_1_arithmetic": true,
+    "option_1_constraints": true,
+    "option_1_score": true,
+    "recommendation": true
+  }
+}
