@@ -1,0 +1,61 @@
+{
+  "schema": "day-decision-v2",
+  "case_id": "demo-disneyland-guardians-conflict",
+  "received_date": "2026-11-26",
+  "source_markdown": "data/disneyland_two_day_demo.md",
+  "scenario": "locked_conflict",
+  "day_title": "Day 2 — Disney California Adventure",
+  "transport_mode": null,
+  "question": "Should we swap the flexible afternoon stop for Soarin’, or squeeze Guardians in before lunch?",
+  "limits": {
+    "trip_budget": 850,
+    "baseline_spend": 720,
+    "extra_transport_cap": null,
+    "available_minutes": 175,
+    "baseline_minutes": 0,
+    "minimum_rest": 45
+  },
+  "locks": [
+    {
+      "text": "08:30–09:45 Radiator Springs Racers · First priority in Cars Land",
+      "start": 510,
+      "end": 585
+    },
+    {
+      "text": "10:00–11:00 Toy Story Midway Mania! · Pixar Pier",
+      "start": 600,
+      "end": 660
+    },
+    {
+      "text": "12:00–13:00 Lunch reservation · Locked in this example",
+      "start": 720,
+      "end": 780
+    },
+    {
+      "text": "16:00–16:45 San Fransokyo Square food and rest",
+      "start": 960,
+      "end": 1005
+    }
+  ],
+  "flexible_stops": [
+    "Flexible · Animation Academy · Original afternoon block of 75 minutes"
+  ],
+  "weights": [
+    45,
+    25,
+    30
+  ],
+  "candidates": [
+    {
+      "name": "Guardians of the Galaxy – Mission: BREAKOUT!",
+      "start": 690,
+      "visit_minutes": 70,
+      "travel_minutes": 0,
+      "transport_cost": 0,
+      "activity_cost": 0,
+      "interest": 5,
+      "route_fit": 5,
+      "notes": "Try a later slot if this ride is a priority. This option starts between scheduled activities and overlaps lunch."
+    }
+  ]
+}
