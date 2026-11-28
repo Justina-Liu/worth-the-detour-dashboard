@@ -302,12 +302,14 @@ def show_day_time_totals(timeline, *, park=False):
 
 
 def show_schedule_rows(table, title):
+    widths = (126, 166, 114) if HALLMARK_PREVIEW else (144, 192, 128)
     with st.container(key="park-order-table"):
         st.dataframe(table, hide_index=True, width="stretch",
+                     row_height=None if HALLMARK_PREVIEW else 44,
                      column_config={"Stop": st.column_config.NumberColumn(width=56),
-                                    "Time": st.column_config.TextColumn(width=126),
-                                    "Status": st.column_config.TextColumn(width=166),
-                                    "Time change": st.column_config.TextColumn(width=114)})
+                                    "Time": st.column_config.TextColumn(width=widths[0]),
+                                    "Status": st.column_config.TextColumn(width=widths[1]),
+                                    "Time change": st.column_config.TextColumn(width=widths[2])})
     rows = []
     for number, slot, text, status, change in table.itertuples(index=False, name=None):
         activity, _, detail = text.removeprefix("Flexible · ").partition(" · ")
@@ -822,7 +824,8 @@ def show_decision(row, case, review, trip, day_index, route_comparison=None):
         reject = st.button("Keep original", type="primary", width="stretch", key="keep-baseline",
                            icon=":material/bookmark:")
     else:
-        new_choice, baseline = st.columns(2)
+        actions = st.container(key="decision-actions") if not HALLMARK_PREVIEW else st
+        new_choice, baseline = actions.columns(2)
         action_label = "Use this replacement" if row.get("replaces") else "Add this stop"
         action_icon = ":material/swap_horiz:" if row.get("replaces") else ":material/add_circle:"
         accept = new_choice.button(action_label, type="primary", width="stretch", icon=action_icon,
@@ -946,16 +949,24 @@ def show_open_itinerary(message):
 
 
 st.set_page_config(page_title="Worth the Detour", page_icon="🧭", layout="wide", initial_sidebar_state="auto")
-if not HALLMARK_PREVIEW and st.query_params.get("view") != "planner":
-    st.html(UI / "home.css")
-    st.html(UI / "home.html")
-    st.stop()
+if not HALLMARK_PREVIEW:
+    st.html(UI / "brand.css")
+    if st.query_params.get("view") != "planner":
+        st.html(UI / "home.css")
+        st.html(UI / "home.html")
+        st.stop()
 
 st.html(UI / "dashboard.css")
 if HALLMARK_PREVIEW:
     st.html(UI / "hallmark.css")
+else:
+    st.html(UI / "dashboard-readable.css")
 with st.container(key="dashboard-header"):
-    st.title(":material/explore: Worth the Detour", anchor=False)
+    if HALLMARK_PREVIEW:
+        st.title(":material/explore: Worth the Detour", anchor=False)
+    else:
+        st.html('<h1 class="dashboard-logo detour-logo"><img src="./app/static/worth-the-detour-wordmark.webp" '
+                'alt="Worth the Detour" width="1774" height="887"></h1>')
 
 workbench, history = st.tabs(["Plan a change", "Latest reviewed workflow"])
 with history:

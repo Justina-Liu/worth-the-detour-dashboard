@@ -1,0 +1,21 @@
+.detour-logo {
+    position: relative;
+    display: block;
+    aspect-ratio: 7.05;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    mix-blend-mode: multiply;
+}
+
+.detour-logo img {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    display: block;
+    width: 115%;
+    max-width: none;
+    height: auto;
+    transform: translate(-50%, -50%);
+    filter: contrast(1.12) brightness(1.02);
+}

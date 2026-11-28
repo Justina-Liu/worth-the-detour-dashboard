@@ -1,0 +1,112 @@
+.st-key-dashboard-header h1.dashboard-logo {
+    width: clamp(15.5rem, 31vw, 21rem);
+    margin: 0;
+}
+
+.st-key-dashboard-header { padding-block: 0.25rem 0.75rem; }
+
+[data-testid="stMain"] [role="tab"] {
+    min-height: 48px;
+    font-size: 16px;
+}
+
+[data-testid="stMain"] [data-testid="stCaptionContainer"] p {
+    color: var(--detour-muted);
+    font-size: 16px;
+    line-height: 1.45;
+}
+
+.st-key-day-overview { gap: 16px; }
+
+.st-key-trip-budget-panel { padding-block: 8px 14px; }
+.st-key-day-overview .st-key-trip-budget-panel { margin-top: 10px; }
+.detour-trip-budget-total { font-size: 32px; }
+
+.detour-trip-budget-details dt,
+.detour-trip-budget-details dd,
+.detour-trip-budget-line span { font-size: 16px; }
+
+.st-key-decision-layout { margin-top: 18px; }
+
+.st-key-decision-layout [data-testid="stHorizontalBlock"]:has(.st-key-decision-panel) { gap: 32px; }
+
+.st-key-decision-panel,
+.st-key-route-panel {
+    padding: clamp(16px, 1.6vw, 24px);
+}
+
+.st-key-decision-panel { container: detour-decision / inline-size; }
+
+.st-key-decision-panel h3,
+.st-key-route-panel h3,
+.st-key-park-order-panel h3 {
+    font-size: clamp(23px, 2vw, 28px);
+    letter-spacing: -0.025em;
+}
+
+.detour-score-label,
+.detour-score-number small,
+.st-key-decision-panel [data-testid="stMetricLabel"] p { font-size: 16px; }
+
+.detour-score-number { font-size: 32px; }
+
+.st-key-decision-panel [data-testid="stMetricValue"],
+.st-key-decision-panel [data-testid="stMetricValue"] > div {
+    font-size: clamp(25px, 2vw, 30px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+}
+
+.st-key-decision-panel [data-baseweb="select"] [role="combobox"] {
+    font-size: 16px;
+}
+
+[data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton) :is(button, a) {
+    min-height: 44px;
+    font-size: 16px;
+}
+
+.st-key-decision-actions button { padding-inline: 12px; }
+
+.st-key-decision-actions button :is([data-testid="stMarkdownContainer"], p) {
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 16px;
+    line-height: 1.25;
+}
+
+.st-key-park-order-panel {
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--detour-border);
+}
+
+.detour-park-time-summary { gap: 12px 28px; }
+
+.detour-park-time-summary dt,
+.detour-park-time-chart,
+.detour-park-stop-meta,
+.detour-park-stop-note { font-size: 16px; }
+
+.detour-park-time-summary dd { font-size: 20px; }
+.detour-park-stop { padding-block: 14px; }
+
+@container detour-decision (max-width: 350px) {
+    .st-key-decision-actions [data-testid="stHorizontalBlock"] {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .st-key-decision-actions [data-testid="stColumn"] {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+}
+
+@container detour-content (max-width: 43rem) {
+    .st-key-decision-layout [data-testid="stHorizontalBlock"]:has(.st-key-decision-panel) { gap: 24px; }
+}

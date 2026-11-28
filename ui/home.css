@@ -1,3 +1,5 @@
+html:has(.detour-home) { font-size: 16px; }
+
 [data-testid="stApp"]:has(.detour-home) [data-testid="stHeader"] {
     background: transparent;
     pointer-events: none;
@@ -41,9 +43,7 @@
 }
 
 .home-logo {
-    display: block;
-    width: clamp(10rem, 21vw, 17.75rem);
-    height: auto;
+    width: clamp(10rem, 22vw, 18.5rem);
 }
 
 .home-nav a {
