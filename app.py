@@ -965,7 +965,7 @@ with st.container(key="dashboard-header"):
     if HALLMARK_PREVIEW:
         st.title(":material/explore: Worth the Detour", anchor=False)
     else:
-        st.html('<h1 class="dashboard-logo detour-logo"><img src="./app/static/worth-the-detour-wordmark.webp" '
+        st.html('<h1 class="dashboard-logo detour-logo"><img src="./app/static/worth-the-detour-wordmark.webp?v=2" '
                 'alt="Worth the Detour" width="1774" height="887"></h1>')
 
 workbench, history = st.tabs(["Plan a change", "Latest reviewed workflow"])

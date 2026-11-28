@@ -6,7 +6,6 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    mix-blend-mode: multiply;
 }
 
 .detour-logo img {
@@ -17,5 +16,4 @@
     max-width: none;
     height: auto;
     transform: translate(-50%, -50%);
-    filter: contrast(1.12) brightness(1.02);
 }
