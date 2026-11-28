@@ -60,7 +60,8 @@ def _fits_untimed(windows, start, end, items):
 
 def trial_slot(items, bounds, option, free, rest=0):
     """Return a slot and optional flexible replacement, or a reason why none fits."""
-    duration = option["visit_minutes"] + option["travel_minutes"]
+    added_duration = option["visit_minutes"] + option["travel_minutes"]
+    duration = added_duration + option.get("baseline_drive_minutes", 0)
     desired = option.get("window", bounds)
     explicit = option.get("replaces")
     if explicit:
@@ -68,12 +69,14 @@ def trial_slot(items, bounds, option, free, rest=0):
         if chosen is None or not chosen.get("flexible"):
             return None, "Choose a stop explicitly marked Flexible for the replacement."
         replacements = [chosen]
+    elif "baseline_drive_minutes" in option:
+        replacements = [None]
     else:
         replacements = [None, *(item for item in items if item.get("flexible") and item.get("duration"))]
 
     for removed in replacements:
         released = (option.get("replaced_minutes") or removed.get("duration")) if removed else 0
-        if released is None or duration > free + released - rest:
+        if released is None or added_duration > free + released - rest:
             continue
         windows = _open_windows(items, bounds, removed)
         untimed = _untimed(items, removed)

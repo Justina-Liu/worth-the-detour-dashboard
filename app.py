@@ -2,9 +2,12 @@
 
 from datetime import date, datetime, time, timezone
 from hashlib import sha256
+from html import escape
 import json
 from math import isfinite
+from os import environ
 from pathlib import Path
+import re
 from uuid import uuid4
 
 import pandas as pd
@@ -13,9 +16,11 @@ import streamlit as st
 from src.agents import PlannerAgent, ReviewerAgent
 from src.database import get_latest_evaluation, save_human_decision
 from src.decision import DECISION_SCHEMA, DEFAULT_WEIGHTS, DIMENSIONS, LOW_SCORE, decision_error, validate_decision
-from src.itinerary import change_ideas, export_trip, find_flexible_stop, format_hours, parse_itinerary, requested_day
-from src.park_map import BLOCKED_STOP, park_walk_map
-from src.routing import DRIVE_MODE, decode_polyline6, directions_links, fetch_road_route, route_key
+from src.itinerary import (TIME, TIME_SEPARATOR, change_ideas, drive_anchors, export_trip, find_flexible_stop,
+                           format_hours, parse_itinerary, place_name, requested_day)
+from src.park_map import BLOCKED_STOP, park_walk_map, shortest_park_order
+from src.routing import (DRIVE_MODE, compare_driving_routes, decode_polyline6, directions_links,
+                         fetch_road_route, find_route_places, route_key)
 from src.trial import DEFAULT_DAY, DEFAULT_VISIT, free_minutes, trial_slot
 from src.workflow import run_refresh
 
@@ -32,6 +37,7 @@ PARK_ROUTES = ROOT / "data" / "disneyland_walk_routes.json"
 ROUTE_FIT = {1: "1 · Significant backtracking", 2: "2 · Out of the way",
              3: "3 · Some detour", 4: "4 · Nearly on the way", 5: "5 · On the way"}
 UI = ROOT / "ui"
+HALLMARK_PREVIEW = environ.get("WTD_PREVIEW_STYLE") == "hallmark"
 ROUTE_MAP = st.components.v2.component(
     "detour_route_map",
     html=(UI / "route-map.html").read_text(encoding="utf-8"),
@@ -65,6 +71,7 @@ def trip_setting(days, name):
 def show_upload_instructions():
     template = ITINERARY_TEMPLATE.read_text(encoding="utf-8")
     st.caption("Paste your plan and the stops you want to try into the prompt. Save the reply as itinerary.md.")
+    st.caption("Include start and end times for the timeline. Add your original estimate and budget here or in Trip costs.")
     prompt = f"""Convert my original itinerary and proposed changes below into one Markdown file for Worth the Detour.
 Use the exact English headings and field labels shown here. Keep the source language for places and notes.
 
@@ -132,9 +139,22 @@ def example_route_data():
     return sample["example_points"], routes
 
 
-def display_route(candidate, sample, token, settings_data):
+def display_route(candidate, sample, token, settings_data, comparison=None):
     heading, settings = st.columns([3, 2], vertical_alignment="center")
     heading.subheader(":material/map: Route", anchor=False)
+    if comparison:
+        with settings.popover("Map settings", icon=":material/settings:"):
+            follow = st.checkbox("Keep center on the selected route", value=True, key=f"{token}-follow")
+        with_stop = candidate is not None
+        places = comparison["places"] if with_stop else comparison["places"][::2]
+        route = comparison["estimates"][int(with_stop)]
+        names, points = [place["name"] for place in places], [place["point"] for place in places]
+        st.caption(" → ".join(names))
+        ROUTE_MAP(data={"names": names, "points": points, "path": route["path"], "follow": follow},
+                  key=f"{token}-map")
+        for label, url in directions_links([f"{lat},{lon}" for lat, lon in points], DRIVE_MODE):
+            st.link_button(label, url, icon=":material/open_in_new:")
+        return
     with settings.popover("Map settings", icon=":material/settings:"):
         follow = st.checkbox("Keep center on the selected route", value=True, key=f"{token}-follow")
         left, right = st.columns(2)
@@ -178,6 +198,14 @@ def display_route(candidate, sample, token, settings_data):
         st.link_button(label, url, icon=":material/open_in_new:")
 
 
+def has_drive_endpoints(settings, token):
+    return all(
+        settings.get(f"{endpoint}_location") or settings.get(f"{endpoint}_coordinates")
+        or st.session_state.get(f"{token}-{name_key}") or st.session_state.get(f"{token}-xy-{endpoint}")
+        for endpoint, name_key in (("start", "origin"), ("end", "destination"))
+    )
+
+
 def show_total_score(score):
     if score is None:
         st.caption("Original plan · comparison baseline")
@@ -195,46 +223,227 @@ def park_route_data():
     return json.loads(PARK_ROUTES.read_text(encoding="utf-8"))
 
 
-def show_park_order(day, token, row=None):
-    schedule = [
-        (item["start"], item["end"], item["text"], "Original plan")
-        for item in day["items"] if not row or item["text"] != row.get("replaces")
-    ]
+def park_route_name(day_title, routes):
+    name = re.split(r"\s+[—–-]\s+|\s*[|｜·]\s*", day_title.strip())[-1].casefold()
+    return next((label for label, park in routes.items() if isinstance(park, dict) and label.casefold() == name), None)
+
+
+def park_slot(start, end):
+    if start is None:
+        return "Flexible"
+    return clock(start) if end is None else f"{clock(start)}–{clock(end)}"
+
+
+def timed_activity_name(item):
+    name = item.get("confirmed_activity") or item["text"]
+    first = TIME.match(name) if item["start"] is not None else None
+    if first is None:
+        return name
+    last = TIME.search(name, first.end()) if item["end"] is not None else None
+    end = last.end() if last and TIME_SEPARATOR.fullmatch(name[first.end():last.start()]) else first.end()
+    return name[end:].lstrip(" ·") or name
+
+
+def park_day_timeline(timed, start, end):
+    intervals = []
+    for lower, upper in sorted((stop["start"], stop["end"]) for stop in timed):
+        if intervals and lower <= intervals[-1][1]:
+            previous_start, previous_end = intervals[-1]
+            intervals[-1] = (previous_start, max(previous_end, upper))
+        else:
+            intervals.append((lower, upper))
+    span = end - start
+    occupied = sum(upper - lower for lower, upper in intervals)
+    gaps = format_hours(span - occupied)
+    segments = "".join(
+        f'<span style="left:{100 * (lower - start) / span:.4f}%;width:{100 * (upper - lower) / span:.4f}%"></span>'
+        for lower, upper in intervals
+    )
+    return (
+        '<div class="detour-park-time-chart">'
+        f'<div class="detour-park-time-track" role="img" aria-label="Timed schedule from {clock(start)} to {clock(end)}. '
+        f'Scheduled blocks {format_hours(occupied)}. Gaps {gaps}.">{segments}</div>'
+        f'<div class="detour-park-time-axis" aria-hidden="true"><span>{clock(start)}</span><span>{clock(end)}</span></div>'
+        '<div class="detour-park-time-key" aria-hidden="true">'
+        '<span class="detour-park-time-scheduled">Scheduled blocks</span>'
+        f'<span>Gaps {gaps}</span></div></div>'
+    )
+
+
+def show_day_time_totals(timeline, *, park=False):
+    planned = [stop for stop in timeline if stop["Status"] != BLOCKED_STOP]
+    known = [stop["duration"] for stop in planned if stop["duration"] is not None]
+    timed = [stop for stop in planned
+             if stop["start"] is not None and stop["end"] is not None and stop["start"] < stop["end"]]
+    summary = []
+    chart = ""
+    if known:
+        label = "Total planned time" if len(known) == len(planned) else "Known planned time"
+        summary.append((label, format_hours(sum(known))))
+    if timed:
+        start = min(stop["start"] for stop in timed)
+        end = max(stop["end"] for stop in timed)
+        label = "Day span" if len(timed) == len(planned) else "Timed span"
+        summary.append((label, f"{park_slot(start, end)} ({format_hours(end - start)})"))
+        chart = park_day_timeline(timed, start, end)
+    if summary:
+        values = "".join(f"<div><dt>{label}</dt><dd>{value}</dd></div>" for label, value in summary)
+        st.html(f'<dl class="detour-park-time-summary">{values}</dl>{chart}')
+        notes = ["Planned time includes queueing and walking."] if park else []
+        untimed_duration = sum((stop["duration"] or 0) for stop in planned if stop["start"] is None)
+        if chart and untimed_duration:
+            notes.append(f"{format_hours(untimed_duration)} has no set time and is included only in the total.")
+        if len(planned) != len(timeline):
+            notes.append("Blocked options are excluded.")
+        if notes:
+            st.caption(" ".join(notes))
+    if planned and not timed:
+        st.caption("Include a start and end time for at least one activity to draw the timeline.")
+
+
+def show_schedule_rows(table, title):
+    with st.container(key="park-order-table"):
+        st.dataframe(table, hide_index=True, width="stretch",
+                     column_config={"Stop": st.column_config.NumberColumn(width=56),
+                                    "Time": st.column_config.TextColumn(width=126),
+                                    "Status": st.column_config.TextColumn(width=166),
+                                    "Time change": st.column_config.TextColumn(width=114)})
+    rows = []
+    for number, slot, text, status, change in table.itertuples(index=False, name=None):
+        activity, _, detail = text.removeprefix("Flexible · ").partition(" · ")
+        tone = " detour-park-stop-blocked" if status == BLOCKED_STOP else ""
+        clean_status = escape(status.lstrip("🔒↻✦ "))
+        detail_html = f'<div class="detour-park-stop-note">{escape(detail)}</div>' if detail else ""
+        change_html = (f'<span class="detour-park-stop-change">Time change {escape(change)}</span>'
+                       if change != "—" else "")
+        rows.append(
+            f'<li class="detour-park-stop{tone}">'
+            f'<span class="detour-park-stop-number" aria-hidden="true">{number}</span>'
+            f'<div class="detour-park-stop-content"><strong>{escape(activity)}</strong>{detail_html}'
+            f'<div class="detour-park-stop-meta"><span>{escape(slot)}</span><span>{clean_status}</span>'
+            f'{change_html}</div></div></li>'
+        )
+    st.html(f'<ol class="detour-park-stops" role="list" aria-label="{title}">' + "".join(rows) + '</ol>')
+
+
+def build_day_schedule(day, row=None, *, park=False, confirmed=False, locks=()):
+    timeline = []
+    estimated_ends = {lock["line"]: lock["end"] for lock in locks if "line" in lock}
+    blocked = bool(row and row["hard_conflicts"])
+    replaced = row.get("replaces") if row and not blocked else None
+    for item in day["items"]:
+        if item["text"] == replaced:
+            continue
+        prior_change = item.get("confirmed_activity")
+        start, end, name = item["start"], item["end"], timed_activity_name(item)
+        end = estimated_ends.get(item["line"], end)
+        duration = end - start if start is not None and end is not None else item.get("duration")
+        flexible = item.get("flexible", False)
+        may_move = bool(park and timeline and duration and not prior_change and not re.search(
+            r"\b(?:reservation|booking|appointment|ticketed|scheduled show|locked|fixed)\b|预约|预订|固定",
+            name, re.IGNORECASE,
+        ))
+        status = "Original plan"
+        if prior_change:
+            status = "Confirmed change"
+        elif not park:
+            status = "Locked" if start is not None else "Flexible" if flexible else "Untimed"
+        slot = park_slot(start, end) if start is not None or flexible or park else "—"
+        timeline.append({"Time": slot, "Activity": name, "Status": status,
+                         "time_change": item.get("time_change"),
+                         "start": start, "end": end, "duration": duration, "flexible": flexible, "may_move": may_move})
     if row and row["option_id"] != "keep_original":
-        if row["hard_conflicts"]:
+        if blocked:
             status = BLOCKED_STOP
-        elif row.get("replaces"):
+        elif confirmed:
+            status = "Confirmed replacement" if replaced else "Confirmed addition"
+        elif replaced:
             status = "↻ Proposed swap"
         else:
             status = "✦ Proposed stop"
-        insert_at = next((i for i, (start, _, _, _) in enumerate(schedule)
-                          if start is not None and start > row["start"]), len(schedule))
-        schedule.insert(insert_at, (row["start"], row["end"], row["label"], status))
-    timeline = []
-    for start, end, text, status in schedule:
-        slot = "Flexible" if start is None else clock(start)
-        if end is not None:
-            slot += "–" + clock(end)
-        if start is not None and text.startswith(clock(start)):
-            text = text.split(" ", 1)[-1]
-        timeline.append({"Stop": len(timeline) + 1, "Time": slot, "Activity": text, "Status": status})
+        start, end = row["start"], row["end"]
+        insert_at = next((i for i, stop in enumerate(timeline)
+                          if stop["start"] is not None and stop["start"] > start), len(timeline))
+        timeline.insert(insert_at, {"Time": park_slot(start, end), "Activity": row["label"], "Status": status,
+                                    "start": start, "end": end, "duration": end - start,
+                                    "time_change": row["extra_minutes"]})
+    return timeline
 
-    map_data = park_walk_map(day["title"], timeline, park_route_data())
+
+def show_day_schedule(timeline, *, park=False):
+    if not timeline:
+        st.caption("No activities were recognized for this day.")
+        return
+    table = pd.DataFrame(timeline, columns=["Time", "Activity", "Status", "time_change"])
+    table.insert(0, "Stop", range(1, len(timeline) + 1))
+    table["time_change"] = [
+        "—" if minutes is None else ("+" if minutes > 0 else "") + format_hours(minutes)
+        for minutes in (stop["time_change"] for stop in timeline)
+    ]
+    title = "Park order" if park else "Day schedule"
+    st.subheader(title, anchor=False)
+    show_day_time_totals(timeline, park=park)
+    show_schedule_rows(table.rename(columns={"time_change": "Time change"}), title)
+
+
+def show_park_order(day, token, row=None, *, confirmed=False, order_panel=None):
+    timeline = build_day_schedule(day, row, park=True, confirmed=confirmed)
+    blocked = any(stop["Status"] == BLOCKED_STOP for stop in timeline)
+    movable = {stop["Activity"].split(" · ", 1)[0]: index for index, stop in enumerate(timeline)
+               if stop.get("may_move") and not stop["flexible"] and stop["start"] is not None}
+    flexible = {index for index, stop in enumerate(timeline) if stop.get("may_move") and stop["flexible"]}
+    routes = park_route_data()
+    route_name = park_route_name(day["title"], routes)
+    map_data = park_walk_map(route_name, timeline, routes) if route_name else None
     if map_data:
         st.subheader(":material/map: Park walkthrough", anchor=False)
-        st.caption(f'Start at **1 · {map_data["names"][0]}**. Tap a pin for the next stop.')
-        ROUTE_MAP(data=map_data, key=f"{token}-park-map")
-        if any(leg["blocked"] for leg in map_data["legs"]):
-            st.caption("Dashed route · Blocked option preview. See the conflict in the option card.")
-        if len(map_data["legs"]) != len(timeline) - 1:
-            st.caption("Some stops or walking segments have no mapped path.")
-        st.caption("Demo walking paths and sample lunch locations · "
-                   "[FOSSGIS / OpenStreetMap](https://routing.openstreetmap.de/about.html) · "
-                   "[Report a map issue](https://www.openstreetmap.org/fixthemap)")
-
-    st.subheader("Park order", anchor=False)
-    st.caption("Example times include queueing and walking. Check the Disneyland app during your visit.")
-    st.dataframe(pd.DataFrame(timeline), hide_index=True, width="stretch")
+        map_panel = st.container()
+    if order_panel is None:
+        order_panel = st.container(key="park-order-panel")
+    with order_panel:
+        schedule_panel = st.container()
+    if map_data:
+        original_m = map_data["distance_m"]
+        if original_m is not None and not blocked and (movable or flexible):
+            with order_panel, st.expander("Compare walking order"):
+                st.caption("The first stop, appointments and changed stops keep their times. "
+                           "Choose the other timed stops that can move.")
+                view = "confirmed" if confirmed else row["option_id"] if row else "itinerary"
+                try_key = f"{token}-{view}-park-walk"
+                selected = st.multiselect("Timed stops you can move", list(movable), key=f"{try_key}-stops",
+                                          placeholder="Choose unbooked rides or breaks")
+                allowed = flexible | {movable[name] for name in selected}
+                best = shortest_park_order(route_name, timeline, routes, allowed)
+                if best is not None and original_m - best[0] >= 1:
+                    distance, schedule = best
+                    st.markdown(f"**Shorter order · {distance:,.0f} m** · Saves **{original_m - distance:,.0f} m**")
+                    st.caption("The map and park order preview the change. Downloads use the confirmed itinerary.")
+                    if st.checkbox("Preview shorter order", value=True, key=f"{try_key}-preview"):
+                        timeline = [
+                            {**timeline[index], "Time": park_slot(start, end), "start": start, "end": end,
+                             "Status": ("↻ Walking-order preview" if index in allowed
+                                        and (start, end) != (timeline[index]["start"], timeline[index]["end"])
+                                        else timeline[index]["Status"])}
+                            for index, start, end in schedule
+                        ]
+                        map_data = park_walk_map(route_name, timeline, routes)
+                elif allowed:
+                    st.caption("No shorter order fits the fixed times and the current finish time.")
+        with map_panel:
+            if map_data["distance_m"] is not None and not blocked:
+                st.caption(f'Walking route **{map_data["distance_m"]:,.0f} m**')
+            ROUTE_MAP(data=map_data, key=f"{token}-park-map")
+            if blocked:
+                st.caption("The dashed segment is a blocked option. See the conflict in the option card.")
+            if len(map_data["legs"]) != len(timeline) - 1:
+                st.caption("Some stops or walking segments have no mapped path.")
+            st.caption("Demo walking paths and sample lunch locations. "
+                       "[FOSSGIS / OpenStreetMap](https://routing.openstreetmap.de/about.html) · "
+                       "[Report a map issue](https://www.openstreetmap.org/fixthemap)")
+    elif timeline:
+        st.caption("The walking map requires stops covered by the Disneyland Park or Disney California Adventure map.")
+    with schedule_panel:
+        show_day_schedule(timeline, park=True)
 
 
 def candidate_fields(index, defaults, token, day_items, imported=False, park=False):
@@ -296,7 +505,7 @@ def candidate_fields(index, defaults, token, day_items, imported=False, park=Fal
                 "replaces": replacement, "replaced_minutes": released, "replaced_activity_cost": recoverable}
 
 
-def show_itinerary_day(day):
+def show_original_park_itinerary(day):
     if not day["items"]:
         st.caption("No original activities were recognized for this day.")
         return
@@ -326,7 +535,7 @@ def trial_fields(idea, saved, key, park, has_flexible, extra_cap):
         visit.caption(f"Editable estimate · {DEFAULT_VISIT} min")
     values["travel_minutes"] = 0 if park else drive.number_input(
         "Extra driving time (min)", min_value=0, max_value=1440, value=defaults.get("travel_minutes"),
-        key=f"{key}-drive", help="Extra driving time for the full visit block, including getting back to your route.",
+        key=f"{key}-drive", help="Leave blank to use the route comparison, or enter your own extra driving time.",
     )
     if extra_cap is not None or "transport_cost" in idea or "activity_cost" in idea:
         values["transport_cost"] = price.number_input("Extra transport (USD)", min_value=0.0,
@@ -354,6 +563,74 @@ def trial_fields(idea, saved, key, park, has_flexible, extra_cap):
     return values
 
 
+def drive_place_picker(day, idea, anchors, entry, key):
+    origin, destination = anchors
+    context = re.split(r"\s+[—–-]\s+", day["title"])[1:]
+    city = context[-1] if context and re.search(r"[^\W\d_]", context[-1]) else ""
+    labels = ("Depart from", "Proposed stop", "Arrive at")
+    defaults = (place_name(origin), idea.get("map_name") or idea["name"], place_name(destination))
+    with st.expander("Compare driving routes", expanded=bool(idea.get("before_check_in"))):
+        st.caption("Find the three locations and confirm any uncertain matches before trying the schedule.")
+        queries = tuple(st.text_input(label, value=default, key=f"{key}-route-place-{index}").strip()
+                        for index, (label, default) in enumerate(zip(labels, defaults)))
+        searches = entry.setdefault("place_searches", {})
+        if st.button("Find route locations", key=f"{key}-find", disabled=not all(queries),
+                     help="Searches the three entries using Photon. Coordinates can also be entered directly."):
+            try:
+                with st.spinner("Finding route locations…"):
+                    for query in queries:
+                        if not searches.get(query):
+                            point = point_from_text(query)
+                            searches[query] = ([{"name": query, "label": query, "point": point}] if point
+                                               else find_route_places(f"{query}, {city}" if city and "," not in query else query))
+            except (OSError, TypeError, ValueError, KeyError):
+                st.warning("Location search is unavailable. You can enter coordinates or estimate extra driving time.")
+        if not all(query in searches for query in queries):
+            return None
+        places = []
+        for index, (label, query) in enumerate(zip(labels, queries)):
+            results = searches[query]
+            if not results:
+                st.info(f"No driving location found for {label.lower()}. Try a street address, "
+                        "a named car park, or coordinates.")
+                places.append(None)
+                continue
+            best = results[0]
+            exact = best["name"].casefold() == query.casefold()
+            local = bool(city and city.casefold() in best["label"].casefold())
+            verified = point_from_text(query) or (best.get("access") and exact and local)
+            default = 0 if len(results) == 1 and verified else None
+            choices = [place["label"] + (f' · {place["access"]}' if place.get("access") else "")
+                       for place in results]
+            match_key = sha256(query.encode()).hexdigest()[:12]
+            selected = st.selectbox(f"Map match · {label}", range(len(results)), index=default,
+                                    placeholder="Confirm a map location",
+                                    format_func=lambda i, labels=choices: labels[i],
+                                    key=f"{key}-match-{index}-{match_key}")
+            if selected is None and best.get("access"):
+                st.caption(f"Suggested for driving · {choices[0]}")
+            elif selected is not None and not (results[selected].get("access") or point_from_text(query)):
+                st.caption("Check that this point is accessible by car.")
+            places.append(results[selected] if selected is not None else None)
+        return places if all(places) else None
+
+
+def show_drive_comparison(comparison):
+    original, changed = comparison["estimates"]
+    time_delta = changed["minutes"] - original["minutes"]
+    km_delta = (changed["distance_m"] - original["distance_m"]) / 1000
+    st.markdown("**Driving comparison**")
+    st.table(pd.DataFrame({
+        "Route": ["Original", "With stop", "Change"],
+        "Driving time": [f'{original["minutes"]} min', f'{changed["minutes"]} min', f"{time_delta:+d} min"],
+        "Distance": [f'{original["distance_m"] / 1000:.1f} km', f'{changed["distance_m"] / 1000:.1f} km',
+                     f"{km_delta:+.1f} km"],
+    }))
+    st.caption("Estimates use mapped roads without live traffic. Driving time excludes the visit. "
+               "[FOSSGIS / OpenStreetMap](https://routing.openstreetmap.de/about.html) · "
+               "[Report a map issue](https://www.openstreetmap.org/fixthemap)")
+
+
 def guided_trial(day, day_index, trip, token, settings, park):
     entry = trip["entries"].setdefault(day_index, {})
     question = st.text_input("What would you like to change?", value=entry.get("question", ""),
@@ -379,6 +656,8 @@ def guided_trial(day, day_index, trip, token, settings, park):
     items = day["items"]
     has_flexible = any(item.get("flexible") for item in items)
     unknown_ends = [item for item in items if item["start"] is not None and item["end"] is None]
+    anchors = drive_anchors(day, ideas[0]) if not park and len(ideas) == 1 and not ideas[0].get("replaces") else None
+    input_places = drive_place_picker(day, ideas[0], anchors, entry, f"{token}-{form_key}") if anchors else None
     if unknown_ends:
         st.caption("A locked event with an unknown end reserves the rest of the planning window. "
                    "Add an end estimate under Planning hours and preferences if you need to schedule after it.")
@@ -419,9 +698,26 @@ def guided_trial(day, day_index, trip, token, settings, park):
             saved = {"key": form_key, "options": values, "bounds": (as_minutes(first), as_minutes(last)),
                      "free_override": remaining, "rest": rest, "weights": weights, "end_times": end_times}
             entry["trial"] = saved
+            if input_places and values[0]["travel_minutes"] is None:
+                try:
+                    with st.spinner("Comparing original and changed routes…"):
+                        estimates = compare_driving_routes([place["point"] for place in input_places],
+                                                           st.session_state.setdefault("road-route-cache", {}))
+                    saved["comparison"] = {"places": input_places, "estimates": estimates}
+                except (OSError, TypeError, ValueError, KeyError):
+                    st.warning("Route estimates are unavailable. Try again or enter extra driving time manually.")
 
     if not saved:
         return None
+    comparison = saved.get("comparison")
+    if anchors and not input_places and saved["options"][0]["travel_minutes"] is None:
+        st.info("Confirm the three map locations, then choose Try schedule, or enter extra driving time manually.")
+        return None
+    if comparison:
+        if input_places != comparison["places"]:
+            st.info("Choose Try schedule to refresh the route after changing a map location.")
+            return None
+        show_drive_comparison(comparison)
     bounds = saved["bounds"]
     if bounds[0] >= bounds[1]:
         st.warning("Choose a latest finish after the earliest start.")
@@ -434,12 +730,29 @@ def guided_trial(day, day_index, trip, token, settings, park):
     free = saved["free_override"]
     calculated = free_minutes(items, bounds)
     if calculated is not None:
+        if comparison:
+            calculated = max(0, calculated - comparison["estimates"][0]["minutes"])
         free = calculated if free is None else min(free, calculated)
     if free is None:
         st.warning("Estimate the free time left after the original untimed activities.")
         return None
     result = []
     for option in saved["options"]:
+        if option.get("before_check_in") and not drive_anchors(day, option):
+            st.warning("Add a time to one hotel check-in and list the previous stop before it.")
+            continue
+        if comparison or option.get("before_check_in"):
+            origin, destination = drive_anchors(day, option)
+            origin_end = end_times.get(origin["line"], origin["end"])
+            if origin_end is None:
+                st.warning("Enter an end estimate for the previous stop before scheduling this drive.")
+                continue
+            earliest, latest = option.get("window", bounds)
+            option = {**option, "window": (max(earliest, origin_end), min(latest, destination["start"]))}
+        if comparison:
+            original, changed = comparison["estimates"]
+            option.update(travel_minutes=changed["minutes"] - original["minutes"],
+                          baseline_drive_minutes=original["minutes"])
         fields = {"travel_minutes": "extra driving time", "transport_cost": "transport cost",
                   "activity_cost": "visit or total extra cost"}
         missing = [label for key, label in fields.items() if option[key] is None]
@@ -460,7 +773,7 @@ def guided_trial(day, day_index, trip, token, settings, park):
         result.append({**option, **slot, "replaced_activity_cost": recoverable if slot["replaces"] else 0,
                        "notes": notes})
     return {"candidates": result, "free": free, "rest": saved["rest"], "weights": saved["weights"],
-            "question": question or settings.get("question", ""),
+            "question": question or settings.get("question", ""), "comparison": comparison,
             "locks": [item for item in items if item["start"] is not None]}
 
 
@@ -487,7 +800,7 @@ def show_comparison(rows):
                      height=max(160, len(chart) * 35 + 64), alt=f"{chart_measure} by option")
 
 
-def show_decision(row, case, review, trip, day_index):
+def show_decision(row, case, review, trip, day_index, route_comparison=None):
     signature = sha256(json.dumps(case, sort_keys=True).encode()).hexdigest()[:16]
     selected = row["option_id"]
     original = selected == "keep_original"
@@ -522,6 +835,7 @@ def show_decision(row, case, review, trip, day_index):
             "action": "accept" if accept else "reject",
             "label": row["label"] if accept else "Original plan",
             "row": row if accept else None, "case": case,
+            "route_comparison": route_comparison if accept else None,
         }
         st.rerun()
 
@@ -554,17 +868,94 @@ def show_saved_decision(trip, day_index, day_count, picker_key, sample):
                     st.error("The workflow stopped. See the run log.")
 
 
+def show_trip_costs(trip, trip_key):
+    with st.container(key="trip-budget-panel"):
+        with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center",
+                          key="trip-budget-heading"):
+            st.html('<div class="detour-trip-budget-label">Estimated trip total</div>', width="content")
+            with st.popover("Trip costs", icon=":material/tune:"):
+                spending = st.number_input("Original trip estimate (USD)", min_value=0.0,
+                                           value=trip["baseline_spend"], key=f"{trip_key}-spend",
+                                           help="Total for the whole trip before any changes.")
+                budget = st.number_input("Trip budget (USD)", min_value=0.0,
+                                         value=trip["budget"], key=f"{trip_key}-budget", placeholder="Optional")
+        card = st.container()
+    trip["baseline_spend"], trip["budget"] = spending, budget
+    changes = round(sum(outcome["row"]["extra_cost"] for outcome in trip["decisions"].values()
+                        if outcome["row"]), 2)
+    if spending is None:
+        card.html(
+            '<div class="detour-trip-budget">'
+            '<p class="detour-trip-budget-notice">Enter the original estimate under Trip costs.</p>'
+            '</div>'
+        )
+        return None, budget
+
+    total = round(spending + changes, 2)
+    change_sign = "+" if changes > 0 else "−" if changes < 0 else ""
+    budget_details = ""
+    if budget is not None:
+        remaining = round(budget - total, 2)
+        status = f"${abs(remaining):,.2f} " + ("left" if remaining >= 0 else "over budget")
+        tone = " detour-trip-budget-over" if remaining < 0 else ""
+        bar = ""
+        if budget > 0:
+            percent = 100 * total / budget
+            width = min(100, max(0, percent))
+            bar = (
+                f'<div class="detour-budget-bar" role="meter" aria-label="Trip budget used" '
+                f'aria-valuemin="0" aria-valuemax="100" aria-valuenow="{width:.2f}" '
+                f'aria-valuetext="{percent:.0f}% of budget used">'
+                f'<span style="width:{width:.2f}%" aria-hidden="true"></span></div>'
+            )
+        budget_details = (
+            f'<div class="detour-trip-budget-limit{tone}">'
+            f'<div class="detour-trip-budget-line"><strong>{status}</strong>'
+            f'<span>Budget ${budget:,.2f}</span></div>{bar}</div>'
+        )
+    card.html(
+        '<div class="detour-trip-budget">'
+        f'<strong class="detour-trip-budget-total">${total:,.2f}</strong>'
+        f'{budget_details}'
+        '<dl class="detour-trip-budget-details">'
+        f'<div><dt>Original estimate</dt><dd>${spending:,.2f}</dd></div>'
+        f'<div><dt>Confirmed changes</dt><dd>{change_sign}${abs(changes):,.2f}</dd></div>'
+        '</dl></div>'
+    )
+    return total, budget
+
+
 def show_open_itinerary(message):
     with st.container(key="itinerary-welcome"):
-        st.subheader("Open your itinerary", anchor=False)
-        st.write(message)
-        st.button("Try the Disneyland demo", icon=":material/map:", on_click=st.session_state.update,
-                  args=({"itinerary-source": "Try a demo", "demo-itinerary": "Disneyland two-day demo"},))
+        intro, example = st.columns([6, 5], gap="large", vertical_alignment="center")
+        with intro:
+            st.header("Compare one change to your itinerary", anchor=False)
+            st.write(message)
+            st.button("Try the Disneyland demo", type="primary", icon=":material/map:",
+                      on_click=st.session_state.update,
+                      args=({"itinerary-source": "Try a demo", "demo-itinerary": "Disneyland two-day demo"},))
+        with example:
+            day = parse_itinerary(DISNEYLAND_DEMO.read_text(encoding="utf-8"))[0]
+            timeline = [{"Activity": timed_activity_name(item), "Time": park_slot(item["start"], item["end"]),
+                         "Status": "Original plan"} for item in day["items"]]
+            map_data = park_walk_map(day["title"], timeline, park_route_data())
+            if map_data:
+                st.markdown("**Disneyland Park · Original route**")
+                ROUTE_MAP(data={**map_data, "compact": True, "fallback": "The route map is unavailable."},
+                          key="welcome-park-map")
 
 
 st.set_page_config(page_title="Worth the Detour", page_icon="🧭", layout="wide", initial_sidebar_state="auto")
+if not HALLMARK_PREVIEW and st.query_params.get("view") != "planner":
+    st.html(UI / "home.css")
+    st.html(UI / "home.html")
+    st.stop()
+
 st.html(UI / "dashboard.css")
-st.title(":material/explore: Worth the Detour", anchor=False)
+if HALLMARK_PREVIEW:
+    st.html(UI / "hallmark.css")
+with st.container(key="dashboard-header"):
+    st.title(":material/explore: Worth the Detour", anchor=False)
 
 workbench, history = st.tabs(["Plan a change", "Latest reviewed workflow"])
 with history:
@@ -593,6 +984,8 @@ with history:
 with workbench:
     source_panel = st.sidebar
     source_panel.header("Your itinerary", anchor=False)
+    if st.query_params.get("demo") == "disneyland" and "itinerary-source" not in st.session_state:
+        st.session_state.update({"itinerary-source": "Try a demo", "demo-itinerary": "Disneyland two-day demo"})
     source = source_panel.selectbox("Itinerary source", ["Upload Markdown", "Paste Markdown", "Try a demo"],
                                     key="itinerary-source")
     if source == "Try a demo":
@@ -606,7 +999,7 @@ with workbench:
         with source_panel.popover("Markdown template & AI prompt", icon=":material/help_outline:"):
             show_upload_instructions()
         if upload is None:
-            show_open_itinerary("Start with a Markdown itinerary in the sidebar. Compare a change and take the updated plan with you.")
+            show_open_itinerary("Upload your Markdown plan in the sidebar to compare a stop’s time and cost before deciding.")
             st.stop()
         try:
             markdown = upload.getvalue().decode("utf-8-sig")
@@ -620,7 +1013,7 @@ with workbench:
     else:
         markdown = source_panel.text_area("Paste your itinerary", height=170, placeholder="## Day 1 — City")
         if not markdown.strip():
-            show_open_itinerary("Paste a Markdown itinerary in the sidebar to review a day and try a change.")
+            show_open_itinerary("Paste your Markdown plan in the sidebar to compare a stop’s time and cost before deciding.")
             st.stop()
     days = parse_itinerary(markdown)
     if not days:
@@ -648,55 +1041,57 @@ with workbench:
     detour = day.get("detour", {})
     imported_settings = day_settings(day)
     park = (imported_settings.get("setting", "").casefold() == "park"
-            or source == "Disneyland two-day demo")
+            or source == "Disneyland two-day demo"
+            or park_route_name(day["title"], park_route_data()) is not None)
     imported_options = detour.get("candidates", [])
     guided = not sample and (not imported_options or any(
         "start" not in option or "visit_minutes" not in option for option in imported_options))
     token = f"{trip_key}-{day_index}"
     decided = day_index in accepted_days
-    summary = st.container()
+    summary = st.container(key="day-overview")
     workspace = st.container()
     with summary:
         st.subheader(day["title"])
+        trip_total, budget = show_trip_costs(trip, trip_key)
         if decided:
             show_saved_decision(trip, day_index, len(days), picker_key, sample)
-            confirmed = parse_itinerary(current_markdown)[day_index]
+            saved = trip["decisions"][day_index]
             if park:
-                show_park_order(confirmed, token)
+                show_park_order(day, token, saved["row"], confirmed=True)
             else:
-                show_itinerary_day(confirmed)
-        elif guided or source in ("Upload Markdown", "Paste Markdown"):
-            if park:
-                with st.expander("Original itinerary", expanded=True):
-                    show_itinerary_day(day)
-            else:
-                show_itinerary_day(day)
-    with st.expander("Trip costs"):
-        left, right = st.columns(2)
-        spending = left.number_input("Original trip estimate (USD)", min_value=0.0,
-                                     value=trip["baseline_spend"], key=f"{trip_key}-spend",
-                                     help="Total for the whole trip before any changes.")
-        budget = right.number_input("Trip budget (USD)", min_value=0.0,
-                                    value=trip["budget"], key=f"{trip_key}-budget", placeholder="Optional")
-        trip["baseline_spend"], trip["budget"] = spending, budget
-        changes = sum(outcome["row"]["extra_cost"] for outcome in trip["decisions"].values() if outcome["row"])
-        if spending is not None:
-            current_total = round(spending + changes, 2)
-            st.metric("Current trip total", f"${current_total:,.2f}", f"${changes:,.2f} from confirmed changes")
-            if budget is not None and current_total > budget:
-                st.warning(f"The current itinerary is ${current_total - budget:,.2f} over your budget.")
+                route_comparison = saved.get("route_comparison")
+                if route_comparison or sample or has_drive_endpoints(imported_settings, token):
+                    candidate_index = int(saved["option_id"].split("_")[1]) - 1
+                    candidate = saved["case"]["candidates"][candidate_index]
+                    with st.container(key="route-panel", border=True):
+                        if route_comparison:
+                            show_drive_comparison(route_comparison)
+                        display_route(candidate, sample, token, imported_settings, route_comparison)
+                show_day_schedule(build_day_schedule(day, saved["row"], confirmed=True,
+                                                     locks=saved["case"]["locks"]))
+        elif park and (guided or source in ("Upload Markdown", "Paste Markdown")):
+            with st.expander("Original itinerary", expanded=True):
+                show_original_park_itinerary(day)
     if decided:
         st.stop()
 
     locks = [item for item in day["items"] if item["start"] is not None]
+    drive_comparison = None
     if guided:
         with workspace:
             trial = guided_trial(day, day_index, trip, token, imported_settings, park)
         if not trial or not trial["candidates"]:
             if park:
                 show_park_order(day, token)
+            else:
+                with summary:
+                    show_day_schedule(build_day_schedule(day))
+                if not trial and has_drive_endpoints(imported_settings, token):
+                    with workspace:
+                        display_route(None, sample, token, imported_settings)
             st.stop()
         candidates, free_time, minimum_rest = trial["candidates"], trial["free"], trial["rest"]
+        drive_comparison = trial["comparison"]
         ideas, weights, locks = trial["question"], trial["weights"], trial["locks"]
         planned, extra_cap = 0, imported_settings.get("extra_transport_cap")
         workspace = st.container()
@@ -740,8 +1135,8 @@ with workbench:
                 weights = [col.slider(label, 0, 100, default, key=f"{token}-weight-{index}")
                            for index, (col, label, default) in enumerate(zip(st.columns(3), DIMENSIONS, DEFAULT_WEIGHTS))]
     limits = {
-        "trip_budget": budget if spending is not None else None,
-        "baseline_spend": None if spending is None else round(spending + changes, 2),
+        "trip_budget": budget if trip_total is not None else None,
+        "baseline_spend": trip_total,
         "extra_transport_cap": extra_cap,
         "available_minutes": None if free_time is None else free_time + planned,
         "baseline_minutes": planned, "minimum_rest": minimum_rest,
@@ -762,6 +1157,8 @@ with workbench:
             with st.expander("Missing or invalid information"):
                 for error in errors:
                     st.write(error)
+            if not park:
+                show_day_schedule(build_day_schedule(day))
         if park or sample or any(option["name"] for option in candidates):
             with workspace:
                 if park:
@@ -783,7 +1180,7 @@ with workbench:
     recommended = proposal["assessment"]["recommended_option"]
     first_inspection = rows[1]["option_id"] if guided and len(candidates) == 1 else recommended
     with summary:
-        if imported_options:
+        if imported_options and source in ("Upload Markdown", "Paste Markdown"):
             count = min(len(imported_options), 3)
             st.caption(f"{count} {'option' if count == 1 else 'options'} loaded from your Markdown.")
         if recommended == "keep_original":
@@ -792,10 +1189,12 @@ with workbench:
             st.write(f'Suggested stop · **{by_id[recommended]["label"]}**')
 
     with workspace:
-        choice_column, map_column = st.columns([2, 3], gap="large")
+        with st.container(key="decision-layout"):
+            choice_column, map_column = st.columns([4, 8] if HALLMARK_PREVIEW else [4, 7], gap="medium")
+            order_panel = st.container(key="park-order-panel")
         with choice_column:
-            with st.container(border=True):
-                st.subheader("Choose an option")
+            with st.container(key="decision-panel", border=True):
+                st.subheader("Choose an option", anchor=False)
                 selected = st.selectbox("Option to inspect", list(by_id),
                                         index=list(by_id).index(first_inspection),
                                         format_func=lambda key: by_id[key]["label"],
@@ -804,7 +1203,8 @@ with workbench:
                 if row.get("replaces"):
                     st.caption("Replaces " + row["replaces"].removeprefix("Flexible · ").split(" · ", 1)[0])
                 if not park and row["option_id"] != "keep_original":
-                    st.caption(f'Proposed block · {clock(row["start"])}–{clock(row["end"])} including extra driving')
+                    driving = "including all driving" if drive_comparison else "including extra driving"
+                    st.caption(f'Proposed block · {clock(row["start"])}–{clock(row["end"])} {driving}')
                 show_total_score(row["score"])
                 time_col, cost_col = st.columns(2)
                 time_col.metric("Time saved" if row["extra_minutes"] < 0 else "Extra time",
@@ -817,7 +1217,7 @@ with workbench:
                 if low_score:
                     for note in row["notes"]:
                         st.caption(note)
-                show_decision(row, case, review, trip, day_index)
+                show_decision(row, case, review, trip, day_index, drive_comparison)
                 show_saved_decision(trip, day_index, len(days), picker_key, sample)
                 facts = [f'{row["rest_minutes"]:g} min rest left']
                 if row["trip_spend"] is not None:
@@ -831,10 +1231,14 @@ with workbench:
                         st.caption(note)
         option = candidates[int(selected.split("_")[1]) - 1] if selected != "keep_original" else None
         with map_column:
-            if park:
-                show_park_order(day, token, row)
-            else:
-                display_route(option, sample, token, imported_settings)
+            with st.container(key="route-panel", border=True):
+                if park:
+                    show_park_order(day, token, row, order_panel=order_panel)
+                else:
+                    display_route(option, sample, token, imported_settings, drive_comparison)
+        if not park:
+            with order_panel:
+                show_day_schedule(build_day_schedule(day, row, locks=locks))
 
     with st.expander("Compare all options"):
         st.caption(f'Data date {case["received_date"]} · Times and costs are estimates.')

@@ -2,14 +2,15 @@
     position: relative;
     isolation: isolate;
     border: 1px solid var(--st-border-color, #d3dfd7);
-    border-radius: 16px;
+    border-radius: var(--detour-map-radius, 0.85rem);
     overflow: hidden;
 }
 .route-canvas {
     height: clamp(260px, 38vh, 390px);
-    background: #e9eeea;
+    background: var(--detour-map-paper, #e9eeea);
 }
-.route-canvas-park { height: clamp(310px, 43vh, 440px); }
+.route-canvas-park { height: clamp(278px, 37vh, 400px); }
+.route-canvas-compact { height: clamp(210px, 31vh, 300px); }
 .route-reset {
     position: absolute;
     top: 10px;
@@ -19,16 +20,17 @@
     height: 44px;
     display: grid;
     place-content: center;
-    color: #194c42;
+    color: var(--detour-map-control, #194c42);
     background: white;
     border: 1px solid #c8d5cc;
-    border-radius: 10px;
+    border-radius: var(--detour-map-radius, 10px);
     box-shadow: 0 2px 7px #1d302b24;
     cursor: pointer;
 }
 .route-reset:disabled { opacity: 0.6; cursor: wait; }
-.route-reset:focus-visible { outline: 3px solid #126e62; outline-offset: 2px; }
+.route-reset:focus-visible { outline: 3px solid var(--detour-map-line, #126e62); outline-offset: 2px; }
 .route-reset:hover:not(:disabled) { background: #e7f3eb; }
+.route-reset:active:not(:disabled) { background: #d4e8de; }
 .route-reset span { font: 27px/1 system-ui, sans-serif; }
 .route-status {
     position: absolute;
@@ -49,16 +51,24 @@
     display: grid;
     place-items: center;
     box-sizing: border-box;
-    background: #126e62;
+    background: var(--detour-map-line, #126e62);
     color: white;
     border: 2px solid white;
-    border-radius: 50%;
+    border-radius: var(--detour-map-radius, 50%);
     box-shadow: 0 2px 5px #1d302b45;
     font-weight: 700;
 }
 .route-stop { background: #984920; }
-.route-marker-start { background: #223d61; outline: 2px solid #223d61; }
+.route-marker-start {
+    background: var(--detour-map-start, #223d61);
+    outline: 2px solid var(--detour-map-start, #223d61);
+}
 .route-marker-blocked { background: #99451b; outline: 2px dashed #99451b; }
+.routed-line:not(.route-conflict) { stroke: var(--detour-map-line, #126e62); }
 .route-popup { line-height: 1.5; }
 .route-popup strong { font-size: 0.88rem; }
 .route-popup-next { margin-top: 6px; }
+
+@media (max-width: 640px) {
+    .route-canvas-park:not(.route-canvas-compact) { height: 238px; }
+}

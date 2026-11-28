@@ -61,9 +61,14 @@ def validate_decision(case):
         prefix = f"Option {index}"
         if not isinstance(option.get("name"), str) or not option["name"].strip():
             errors.append(f"{prefix} needs a name.")
+        baseline_drive = option.get("baseline_drive_minutes", 0) if current else 0
+        if not _minute(baseline_drive) or not 0 <= baseline_drive <= 1440:
+            errors.append(f"{prefix} needs a valid original drive duration.")
+            baseline_drive = 0
         for field in ("visit_minutes", "travel_minutes", "transport_cost", "activity_cost"):
             value = option.get(field)
-            if not _numeric(value) or value < 0 or (field == "visit_minutes" and value == 0):
+            minimum = -baseline_drive if field == "travel_minutes" else 0
+            if not _numeric(value) or value < minimum or (field == "visit_minutes" and value == 0):
                 errors.append(f"{prefix} needs a valid {field.replace('_', ' ')}.")
         if not _minute(option.get("start")) or not 0 <= option["start"] < 1440:
             errors.append(f"{prefix} needs a valid start time.")
@@ -142,7 +147,7 @@ def plan_decision(case):
         recovered_cost = option["replaced_activity_cost"] if replaces else 0
         cost = round(option["transport_cost"] + option["activity_cost"] - recovered_cost, 2)
         rest = base_rest - added_minutes
-        finish = option["start"] + duration
+        finish = option["start"] + duration + (option.get("baseline_drive_minutes", 0) if current else 0)
         spend = None if baseline_spend is None else round(baseline_spend + cost, 2)
         time_cost = _within_limit(added_minutes, max(0, base_rest - limits["minimum_rest"]))
         if current:
@@ -211,7 +216,7 @@ def review_decision(case, proposal):
     }
     for i, (candidate, row) in enumerate(zip(candidates, options[1:]), start=1):
         duration = candidate["travel_minutes"] + candidate["visit_minutes"]
-        finish = candidate["start"] + duration
+        finish = candidate["start"] + duration + (candidate.get("baseline_drive_minutes", 0) if current else 0)
         replaces = candidate.get("replaces") if current else None
         released = candidate["replaced_minutes"] if replaces else 0
         rest = limits["available_minutes"] - (limits["baseline_minutes"] - released + duration)

@@ -28,6 +28,10 @@ def validate_case(case: dict[str, Any]) -> list[str]:
     """Return user-readable errors. An empty list means the case is safe to evaluate."""
     if not isinstance(case, dict):
         return ["The case must be a JSON object."]
+    # Apply the shared untrusted-input policy before any schema-specific return.
+    raw_text = _all_text(case).lower()
+    if any(pattern in raw_text for pattern in INSTRUCTION_PATTERNS):
+        return ["Unsafe instruction-like text found in raw data. The run stopped without processing it."]
     if case.get("schema") in DECISION_SCHEMAS:
         return validate_decision(case)
     errors: list[str] = []
@@ -65,8 +69,5 @@ def validate_case(case: dict[str, Any]) -> list[str]:
         elif value < 0:
             errors.append(f"{label.capitalize()} cannot be negative.")
 
-    raw_text = _all_text(case).lower()
-    if any(pattern in raw_text for pattern in INSTRUCTION_PATTERNS):
-        errors.append("Unsafe instruction-like text found in raw data. The run stopped without processing it.")
     return errors
 

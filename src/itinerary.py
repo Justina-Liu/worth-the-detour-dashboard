@@ -15,6 +15,8 @@ FIELD = re.compile(r"^\s*-\s*([^:：]+)[:：]\s*(.*?)\s*$")
 FLEXIBLE = re.compile(r"^(?:flexible|可调整|弹性)\s*·\s*", re.I)
 DURATION = re.compile(r"(?<![\d.-])(\d{1,3}(?:\.\d{1,2})?)\s*(hours?|hrs?\b|h\b|minutes?\b|mins?\b|小时|分钟)", re.I)
 TIME_SEPARATOR = re.compile(r"\s*(?:[-–—~～]|to|至|到)\s*", re.I)
+CONFIRMED_CHANGE = " · Confirmed itinerary change · "
+TIME_CHANGE = re.compile(r"(?:^| · )Time change ([+−-]?\d{1,3}(?:\.\d{1,2})?) hr(?: · |$)")
 DAY_NUMBERS = {
     "free minutes": ("free_minutes", 1440), "minimum rest minutes": ("minimum_rest", 1440),
     "trip budget usd": ("trip_budget", None), "original trip estimate usd": ("baseline_spend", None),
@@ -45,6 +47,8 @@ TIME_OF_DAY = {"morning": (540, 720), "上午": (540, 720), "早上": (540, 720)
 TIME_WORDS = "|".join(TIME_OF_DAY)
 ENDING_DURATION = re.compile(r"\s*[,，；;(（]\s*(?:allow|about|around|for|逛|约|预计|预留)?\s*.*$", re.I)
 SWAP = re.compile(r"^(?:replace (.+?) with |(?:想|能不能|能否|能)?把\s*(.+?)\s*(?:换成|改成|替换成)\s*)(.+)$", re.I)
+BEFORE_CHECK_IN = r"(?:before (?:hotel )?check[ -]?in|(?:酒店)?入住前)"
+CHECK_IN = re.compile(r"\bcheck[ -]?in\b|入住", re.I)
 
 
 def _minutes(match):
@@ -69,6 +73,7 @@ def change_ideas(text, *, allow_names=False):
     day = DAY_REFERENCE.match(text)
     if day:
         text = text[day.end():]
+    text, before_check_in = re.subn(rf"^{BEFORE_CHECK_IN}[\s,，]*", "", text, flags=re.I)
     period = re.match(rf"^(?:in the\s+)?({TIME_WORDS})\s*[,，:]?\s*", text, re.I)
     if not period:
         period = re.search(rf"\s+(?:(?:in|this)\s+)?(?:the\s+)?({TIME_WORDS})$", text, re.I)
@@ -87,6 +92,8 @@ def change_ideas(text, *, allow_names=False):
         swap = SWAP.fullmatch(choice)
         if swap:
             choice = swap[3]
+        choice, before_suffix = re.subn(rf"\s*{BEFORE_CHECK_IN}(?=\s*[,，(（;；]|\s*$)",
+                                        "", choice, flags=re.I)
         visit = stated_duration(choice)
         if visit:
             choice = ENDING_DURATION.sub("", choice)
@@ -100,6 +107,8 @@ def change_ideas(text, *, allow_names=False):
                 option["visit_minutes"] = visit
             if period:
                 option["window"] = TIME_OF_DAY[period[1].casefold()]
+            if before_check_in or before_suffix:
+                option["before_check_in"] = True
             options.append(option)
     return options
 
@@ -219,8 +228,9 @@ def parse_itinerary(markdown):
             clean = " · ".join(column for column in columns if column)
         if not (table_row or TIME.search(clean) or re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", line)):
             continue
-        flexible = bool(FLEXIBLE.match(clean))
-        times = list(TIME.finditer(clean.split(" · Confirmed itinerary change", 1)[0]))
+        activity, confirmed, details = clean.partition(CONFIRMED_CHANGE)
+        flexible = bool(FLEXIBLE.match(activity))
+        times = list(TIME.finditer(activity))
         start = _minutes(times[0]) if times else None
         end = None
         if len(times) > 1 and TIME_SEPARATOR.fullmatch(clean[times[0].end():times[1].start()]):
@@ -229,12 +239,17 @@ def parse_itinerary(markdown):
                 end = possible_end
         item = {"text": clean, "start": None if flexible else start,
                 "end": None if flexible else end, "line": index}
+        if confirmed:
+            item["confirmed_activity"] = activity
+            change = TIME_CHANGE.search(details)
+            if change:
+                item["time_change"] = round(60 * float(change[1].replace("−", "-")))
         if flexible:
             item["flexible"] = True
             if end is not None:
                 item.update(flexible_start=start, flexible_end=end, duration=end - start)
         if item["start"] is None and "duration" not in item:
-            item["duration"] = stated_duration(clean)
+            item["duration"] = stated_duration(activity)
         day["items"].append(item)
     return days
 
@@ -242,6 +257,29 @@ def parse_itinerary(markdown):
 def format_hours(minutes):
     hours = f"{minutes / 60:.2f}".rstrip("0").rstrip(".")
     return f"{hours} hr"
+
+
+def place_name(activity):
+    """Read the place portion of a timed activity for a map lookup."""
+    label = re.sub(r"^\d{1,2}[:：]\d{2}(?:\s*(?:[-–—~～]|to|至|到)\s*\d{1,2}[:：]\d{2})?\s*",
+                   "", activity["text"], flags=re.I)
+    label = label.split(" · ", 1)[0]
+    label = re.sub(r"^(?:(?:hotel )?check[ -]?in(?: at|:)?\s*|入住\s*)", "", label, flags=re.I)
+    return label.strip()
+
+
+def drive_anchors(day, idea):
+    """Use adjacent activities and require a unique check-in for a before-check-in request."""
+    items = day["items"]
+    if idea.get("before_check_in"):
+        matches = [index for index, item in enumerate(items)
+                   if item["start"] is not None and CHECK_IN.search(item["text"])]
+        if len(matches) == 1 and matches[0] > 0:
+            index = matches[0]
+            return items[index - 1], items[index]
+    elif len(items) == 2 and all(item["start"] is not None for item in items):
+        return tuple(items)
+    return None
 
 
 def export_itinerary(markdown, days, day_index, row, accepted):
@@ -270,7 +308,7 @@ def export_itinerary(markdown, days, day_index, row, accepted):
     details = [f'Budget change {cost}', f'Time change {format_hours(row["extra_minutes"])}']
     if row.get("transport_mode"):
         details.append(row["transport"])
-    block = [f'- {slot} {name} · Confirmed itinerary change · Including travel · ' + " · ".join(details)]
+    block = [f"- {slot} {name}{CONFIRMED_CHANGE}Including travel · " + " · ".join(details)]
     if row["notes"]:
         block.extend(f"> Check {note}" for note in row["notes"])
     before = [line for index, line in enumerate(lines[:insert_at]) if index not in removed]

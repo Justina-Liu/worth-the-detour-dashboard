@@ -1,59 +1,392 @@
+[data-testid="stApp"] {
+    --detour-ink: #1b3229;
+    --detour-muted: #4b6257;
+    --detour-accent: #0f685b;
+    --detour-paper: #fffef9;
+    --detour-sage: #ecf2e8;
+    --detour-border: #d4ded5;
+    --detour-radius: 0.85rem;
+    --detour-sp-1: 0.25rem;
+    --detour-sp-2: 0.5rem;
+    --detour-sp-3: 0.75rem;
+    --detour-sp-4: 1rem;
+    --detour-sp-6: 1.5rem;
+}
+
 [data-testid="stMainBlockContainer"] {
-    padding-top: 3.5rem;
+    container: detour-content / inline-size;
+    max-width: 88rem;
+    padding: 3.65rem clamp(1.15rem, 3.2vw, 3.75rem) 4rem;
 }
 
-[data-testid="stMain"] h1 {
-    font-size: 2.7rem;
-    line-height: 1.1;
-    letter-spacing: -0.033em;
+.st-key-dashboard-header h1 {
+    padding: 0;
+    font-size: clamp(1.95rem, 2.8vw, 2.7rem);
+    line-height: 1.12;
+    letter-spacing: -0.039em;
 }
 
-[data-testid="stMain"] h1 .material-symbols-rounded {
-    color: var(--st-primary-color, #0f685b);
+.st-key-dashboard-header .material-symbols-rounded {
+    color: var(--detour-accent);
 }
 
+[data-testid="stMain"] h2,
 [data-testid="stMain"] h3 {
-    line-height: 1.18;
-    letter-spacing: -0.024em;
+    color: var(--detour-ink);
+    line-height: 1.15;
+    letter-spacing: -0.035em;
+}
+
+[data-testid="stMain"] [data-baseweb="tab-list"] { gap: clamp(0.75rem, 2vw, 1.6rem); }
+
+[data-testid="stMain"] [role="tab"] {
+    min-height: 2.75rem;
+    font-weight: 600;
+}
+
+[data-testid="stMain"] [role="tab"]:not([aria-selected="true"]) { color: var(--detour-muted); }
+
+[data-testid="stSidebarContent"] [data-testid="stFileUploaderDropzone"] {
+    background: var(--detour-paper);
+    border: 1px dashed #a8bbaf;
+    border-radius: var(--detour-radius);
 }
 
 .st-key-itinerary-welcome {
-    margin-top: 1rem;
-    padding: 1.6rem 1.85rem;
-    border: 1px solid var(--st-border-color, #d4ded5);
-    border-radius: 1rem;
-    background: #f0f4ec;
+    margin-top: 0.65rem;
+    padding: clamp(1.35rem, 3.25vw, 3rem);
+    border: 1px solid var(--detour-border);
+    border-radius: var(--detour-radius);
+    background: var(--detour-sage);
 }
 
-.st-key-itinerary-welcome p {
-    max-width: 62ch;
+.st-key-itinerary-welcome h2 {
+    max-width: 16ch;
+    padding: 0 0 0.35rem;
+    font-size: clamp(2.05rem, 3.9vw, 3.65rem);
+    line-height: 1;
+    letter-spacing: -0.055em;
 }
 
-.detour-score {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    padding: 0.4rem 0 0.6rem;
-    border-bottom: 1px solid var(--st-border-color, #d4ded5);
+.st-key-itinerary-welcome p:not(button p) {
+    max-width: 39ch;
+    color: var(--detour-muted);
+    line-height: 1.55;
 }
 
-.detour-score-label { font-size: 0.9rem; }
+.st-key-itinerary-welcome strong { color: var(--detour-ink); }
 
-.detour-score-number {
-    font-size: 1.5rem;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
+.st-key-itinerary-welcome [data-testid="stButton"] { margin-top: 0.35rem; }
+
+.st-key-day-overview h3 { padding-bottom: 0; }
+
+.st-key-trip-budget-panel {
+    --budget-ink: #fffaf0;
+    --budget-muted: #c7dbd0;
+    --budget-accent: #91dbaf;
+    --budget-surface: #17382e;
+    --budget-control: #294b40;
+    --budget-control-hover: #385d50;
+    --budget-track: #49685a;
+    --budget-exceeded: #ffbf98;
+    gap: var(--detour-sp-1);
+    padding: var(--detour-sp-3) var(--detour-sp-6) var(--detour-sp-4);
+    border-radius: var(--detour-radius);
+    background: var(--budget-surface);
+    color: var(--budget-ink);
     font-variant-numeric: tabular-nums;
 }
 
-.detour-score-number small { font-size: 0.8rem; font-weight: 500; }
+.st-key-trip-budget-heading { gap: var(--detour-sp-2); flex-wrap: nowrap; }
+.st-key-trip-budget-heading > :first-child { min-width: 0; }
+
+.st-key-trip-budget-heading [data-testid="stPopoverButton"] {
+    min-height: 44px;
+    color: var(--budget-ink);
+    background: var(--budget-control);
+    border-color: var(--budget-track);
+}
+
+.st-key-trip-budget-heading [data-testid="stPopoverButton"]:hover {
+    color: var(--budget-ink);
+    background: var(--budget-control-hover);
+    border-color: var(--budget-muted);
+}
+
+.st-key-trip-budget-heading [data-testid="stPopoverButton"]:focus-visible {
+    outline: 2px solid var(--budget-accent);
+    outline-offset: 2px;
+}
+
+.detour-trip-budget {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--detour-sp-3) var(--detour-sp-6);
+}
+
+.detour-trip-budget:has(.detour-trip-budget-limit) {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
+}
+
+.detour-trip-budget-label {
+    color: var(--budget-muted);
+    font-weight: 600;
+}
+
+.detour-trip-budget-total {
+    color: var(--budget-ink);
+    overflow-wrap: break-word;
+    font-size: 2.35rem;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+}
+
+.detour-trip-budget-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--detour-sp-2) var(--detour-sp-4);
+    margin: 0;
+    padding: 0;
+}
+
+.detour-trip-budget-details dt,
+.detour-trip-budget-line span {
+    color: var(--budget-muted);
+    font-size: 0.875rem;
+}
+
+.detour-trip-budget-details dd {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.detour-trip-budget-notice { margin: 0; }
+
+.detour-trip-budget-limit { min-width: 0; }
+
+.detour-trip-budget-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+}
+
+.detour-trip-budget-line strong { color: var(--budget-accent); }
+
+.detour-budget-bar {
+    height: 0.55rem;
+    margin-top: var(--detour-sp-1);
+    overflow: hidden;
+    border-radius: 1rem;
+    background: var(--budget-track);
+}
+
+.detour-budget-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--budget-accent);
+}
+
+.detour-trip-budget-over { --budget-accent: var(--budget-exceeded); }
+
+.st-key-decision-panel,
+.st-key-route-panel {
+    border-radius: var(--detour-radius);
+    background: var(--detour-paper);
+}
+
+.st-key-decision-panel h3,
+.st-key-route-panel h3,
+.st-key-park-order-panel h3 { padding: 0; }
+
+.st-key-decision-panel [data-testid="stMetric"] {
+    padding: var(--detour-sp-2) 0 0;
+    border-top: 1px solid var(--detour-border);
+}
+
+.st-key-decision-panel [data-testid="stMetricValue"] {
+    font-size: clamp(1.1rem, 2.05vw, 1.6rem);
+    line-height: 1.2;
+}
+
+.st-key-decision-panel [data-testid="stMetricLabel"] {
+    color: var(--detour-muted);
+}
+
+.st-key-park-order-panel { margin-top: var(--detour-sp-2); }
+
+.st-key-park-order-panel [data-testid="stDataFrame"] {
+    border-radius: var(--detour-radius);
+}
+
+.detour-park-time-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--detour-sp-2) var(--detour-sp-6);
+    margin: 0;
+    padding: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-park-time-summary dt {
+    color: var(--detour-muted);
+    font-size: 0.875rem;
+}
+
+.detour-park-time-summary dd {
+    margin: var(--detour-sp-1) 0 0;
+    font-weight: 600;
+}
+
+.detour-park-time-chart {
+    margin-top: var(--detour-sp-3);
+    color: var(--detour-muted);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-park-time-track {
+    position: relative;
+    height: 0.8rem;
+    overflow: hidden;
+    border-radius: var(--detour-sp-1);
+    background: var(--detour-border);
+}
+
+.detour-park-time-track span {
+    position: absolute;
+    inset-block: 0;
+    background: var(--detour-accent);
+}
+
+.detour-park-time-axis,
+.detour-park-time-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--detour-sp-1) var(--detour-sp-4);
+    margin-top: var(--detour-sp-1);
+}
+
+.detour-park-time-axis { justify-content: space-between; }
+
+.detour-park-time-key span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--detour-sp-2);
+}
+
+.detour-park-time-key span::before {
+    content: "";
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 0.13rem;
+    background: var(--detour-border);
+}
+
+.detour-park-time-key .detour-park-time-scheduled::before { background: var(--detour-accent); }
+
+.detour-park-stops { display: none; }
+
+.stHtml :is(.detour-trip-budget-details, .detour-park-time-summary, .detour-park-stops) {
+    padding-inline: 0;
+}
+
+.detour-park-stop {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--detour-sp-3);
+    padding: var(--detour-sp-3) 0;
+    border-top: 1px solid var(--detour-border);
+}
+
+.detour-park-stop-number {
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--detour-sage);
+    color: var(--detour-ink);
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-park-stop-content { overflow-wrap: anywhere; }
+
+.detour-park-stop-meta,
+.detour-park-stop-note {
+    color: var(--detour-muted);
+    font-size: 0.875rem;
+}
+
+.detour-park-stop-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--detour-sp-1) var(--detour-sp-3);
+    margin-top: var(--detour-sp-1);
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-park-stop-change {
+    color: var(--detour-ink);
+    font-weight: 600;
+}
+
+.detour-park-stop-blocked .detour-park-stop-meta {
+    color: var(--st-error-text-color, #9c431f);
+}
+
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p { color: var(--detour-muted); }
+[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+
+.detour-score {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    justify-items: start;
+    gap: 0.35rem 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--detour-border);
+    border-radius: 0.65rem;
+    background: var(--detour-sage);
+}
+
+.detour-score-label {
+    grid-column: 1 / -1;
+    color: var(--detour-muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.detour-score-number {
+    color: var(--detour-ink);
+    font-size: 1.95rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+}
+
+.detour-score-number small {
+    margin-left: 0.15rem;
+    color: var(--detour-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0;
+}
 
 .detour-stars {
     position: relative;
-    color: #c0cbbf;
-    font-size: 1.05rem;
-    letter-spacing: 0.04em;
+    color: #a6b6aa;
+    font-size: 1rem;
+    letter-spacing: 0.06em;
     line-height: 1;
 }
 
@@ -62,15 +395,83 @@
     inset: 0 auto 0 0;
     overflow: hidden;
     white-space: nowrap;
-    color: #965324;
+    color: #945223;
 }
 
-[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+[data-testid="stApp"] ::selection { background: #cde7d6; color: var(--detour-ink); }
 
-[data-testid="stApp"] ::selection { background: #cde7d6; color: #17392f; }
+[data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton) :is(button, a):focus-visible {
+    outline: 2px solid var(--detour-accent);
+    outline-offset: 3px;
+}
 
-@media (max-width: 640px) {
-    [data-testid="stMainBlockContainer"] { padding-top: 2.6rem; }
-    [data-testid="stMain"] h1 { font-size: 2.1rem; }
-    .st-key-itinerary-welcome { padding: 1.1rem 1.25rem; }
+@media (prefers-reduced-motion: no-preference) {
+    .st-key-itinerary-welcome { animation: detour-enter 250ms ease-out both; }
+
+    [data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton) :is(button, a):not(:disabled) {
+        transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    }
+
+    [data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton)
+        :is(button, a):not(:disabled):hover { transform: translateY(-1px); }
+
+    [data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton)
+        :is(button, a):not(:disabled):active { transform: translateY(1px); }
+
+    @keyframes detour-enter {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+}
+
+@container detour-content (max-width: 43rem) {
+    .st-key-itinerary-welcome [data-testid="stHorizontalBlock"],
+    .st-key-decision-layout [data-testid="stHorizontalBlock"]:has(.st-key-decision-panel) {
+        flex-direction: column;
+        gap: 1.15rem;
+    }
+
+    .st-key-itinerary-welcome [data-testid="stColumn"],
+    .st-key-decision-layout [data-testid="stHorizontalBlock"]:has(.st-key-decision-panel) > [data-testid="stColumn"] {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+}
+
+@container detour-content (max-width: 46rem) {
+    .st-key-park-order-table { display: none; }
+    .detour-park-stops { display: block; padding: 0; margin: 0; }
+}
+
+@container detour-content (max-width: 37rem) {
+    .st-key-trip-budget-panel { padding-inline: var(--detour-sp-4); }
+    .detour-trip-budget,
+    .detour-trip-budget:has(.detour-trip-budget-limit) {
+        grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+        gap: var(--detour-sp-2) var(--detour-sp-3);
+    }
+    .detour-trip-budget-details {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-column: 1 / -1;
+        column-gap: var(--detour-sp-3);
+    }
+    .detour-trip-budget-details dt { font-size: 0.8125rem; }
+    .detour-trip-budget-details dd { font-size: 0.95rem; }
+    .detour-trip-budget-total { font-size: 2.05rem; }
+    .detour-trip-budget-line { font-size: 0.875rem; }
+}
+
+@media (max-width: 480px) {
+    [data-testid="stMainBlockContainer"] { padding-top: 4rem; }
+    .st-key-itinerary-welcome h2 { max-width: none; }
+    .st-key-decision-panel [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"], .st-key-reject-option) {
+        flex-wrap: nowrap;
+    }
+    .st-key-decision-panel [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"], .st-key-reject-option)
+        > [data-testid="stColumn"] {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    [data-testid="stApp"] :is(.stButton, .stDownloadButton, .stLinkButton) :is(button, a) { min-height: 44px; }
 }

@@ -36,7 +36,7 @@ function stopPopup(name, detail) {
         const next = document.createElement("div");
         next.className = "route-popup-next";
         const prefix = detail.nextBlocked ? "Conflict preview" : "Walk next to";
-        const distance = detail.meters === undefined ? "" : ` (${detail.meters} m)`;
+        const distance = detail.meters === undefined ? "" : ` (${detail.meters} m · ~${detail.walkMinutes} min)`;
         next.textContent = `${prefix} ${detail.next}${distance}`;
         content.append(next);
     }
@@ -49,6 +49,7 @@ export default function render({ data, parentElement }) {
     const status = parentElement.querySelector(".route-status");
     const parkMap = Boolean(data.stopDetails);
     canvas.classList.toggle("route-canvas-park", parkMap);
+    canvas.classList.toggle("route-canvas-compact", Boolean(data.compact));
     let view = maps.get(canvas);
     if (!view) {
         view = { revision: 0, follow: false };
@@ -130,8 +131,8 @@ export default function render({ data, parentElement }) {
         status.hidden = true;
     }).catch(() => {
         if (revision !== view.revision || !canvas.isConnected) return;
-        status.textContent = parkMap ? "Map unavailable. See the park order below."
-            : "Map unavailable. Open the route in Google Maps below.";
+        status.textContent = data.fallback || (parkMap ? "Map unavailable. See the park order below."
+            : "Map unavailable. Open the route in Google Maps below.");
         status.hidden = false;
     });
 }

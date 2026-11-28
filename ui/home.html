@@ -1,0 +1,42 @@
+<div class="detour-home">
+    <header class="home-nav">
+        <img class="home-logo" src="./app/static/worth-the-detour-logo.webp" alt="Worth the Detour" width="760" height="80">
+        <nav aria-label="Main navigation">
+            <a href="#how-it-works">How it works</a>
+        </nav>
+    </header>
+
+    <section class="home-hero" aria-labelledby="home-title">
+        <div class="home-intro">
+            <h1 id="home-title">Is it worth<br>the <em>detour?</em></h1>
+            <p>Bring your itinerary and see what one more stop would do to your route, schedule, and budget.</p>
+            <div class="home-actions">
+                <a class="home-action home-action-primary" href="?view=planner">Open planner <span aria-hidden="true">&rarr;</span></a>
+                <a class="home-action home-action-secondary" href="?view=planner&amp;demo=disneyland">Try the Disneyland demo</a>
+            </div>
+        </div>
+        <figure class="home-preview">
+            <img class="home-hero-image" src="./app/static/coastal-detour.webp" alt="" width="1448" height="1086" fetchpriority="high">
+            <figcaption class="home-trip-card">
+                <div class="home-trip-heading">
+                    <span>Disneyland demo</span>
+                    <strong>+0.75 hr &middot; $0 extra</strong>
+                </div>
+                <ol class="home-trip-stops">
+                    <li>Haunted Mansion</li>
+                    <li class="home-trip-added">Add Pirates of the Caribbean</li>
+                    <li>Lunch reservation <span>12:15</span></li>
+                </ol>
+            </figcaption>
+        </figure>
+    </section>
+
+    <section class="home-workflow" id="how-it-works" aria-labelledby="workflow-title">
+        <h2 id="workflow-title">How it works</h2>
+        <ol class="home-steps">
+            <li><h3>Bring your plan</h3><p>Upload or paste a Markdown itinerary and choose a day.</p></li>
+            <li><h3>Compare a change</h3><p>See the route, added time and cost, and any conflicts with fixed plans.</p></li>
+            <li><h3>Decide and download</h3><p>Confirm the change or keep your original plan, then download the full itinerary.</p></li>
+        </ol>
+    </section>
+</div>

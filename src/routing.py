@@ -1,8 +1,10 @@
 """Transport choices, route geometry, and Google Maps directions links."""
 
 import json
+from math import ceil, isfinite
+import re
 from threading import Lock
-from time import monotonic
+from time import monotonic, sleep
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -23,7 +25,18 @@ ROAD_PROFILES = {
     "bicycling": ("bike", "cycling"),
 }
 _request_lock = Lock()
-_next_request = 0.0
+_next_request = {}
+
+
+def _request_json(provider, url):
+    request = Request(url, headers={"User-Agent": "WorthTheDetour-CoursePrototype/1.0"})
+    with _request_lock:
+        delay = _next_request.get(provider, 0) - monotonic()
+        if delay > 0:
+            sleep(delay)
+        _next_request[provider] = monotonic() + 1
+    with urlopen(request, timeout=6) as response:
+        return json.loads(response.read(1_000_000))
 
 
 def transport_label(mode):
@@ -65,28 +78,84 @@ def decode_polyline6(encoded):
 
 def fetch_road_route(points, mode):
     """Fetch a route on demand from the FOSSGIS demo router."""
-    global _next_request
     profile = ROAD_PROFILES[mode]
     road_points = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in points)
-    request = Request(
+    payload = _request_json(
+        "routing",
         f"https://routing.openstreetmap.de/routed-{profile[0]}/route/v1/{profile[1]}/{road_points}"
         "?geometries=polyline6&overview=full&generate_hints=false",
-        headers={"User-Agent": "WorthTheDetour-CoursePrototype/1.0"},
     )
-    with _request_lock:
-        now = monotonic()
-        if now < _next_request:
-            raise ValueError("Please wait a moment before requesting another route.")
-        _next_request = now + 1.0
-    with urlopen(request, timeout=6) as response:
-        payload = json.loads(response.read(1_000_000))
     if payload.get("code") != "Ok" or not payload.get("routes"):
         raise ValueError("No route was found.")
     route = payload["routes"][0]
+    if any(not isfinite(route[key]) or route[key] < 0 for key in ("distance", "duration")):
+        raise ValueError("Invalid route estimate.")
     return {
         "path": decode_polyline6(route["geometry"]),
         "distance_m": route["distance"],
+        "duration_s": route["duration"],
     }
+
+
+def _search_places(query):
+    url = "https://photon.komoot.io/api/?" + urlencode({"q": query, "limit": 5})
+    places = []
+    for result in _request_json("geocoding", url)["features"]:
+        fields = result["properties"]
+        if result["geometry"]["type"] != "Point":
+            continue
+        lon, lat = result["geometry"]["coordinates"]
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            continue
+        kind = fields.get("osm_value")
+        street = fields.get("street") or ""
+        address = " ".join(fields[key] for key in ("housenumber", "street") if fields.get(key))
+        name = fields.get("name") or address
+        if not name:
+            continue
+        access = fields.get("extra") or {}
+        if (kind in {"footway", "pedestrian", "steps", "path", "platform", "subway_entrance",
+                     "bus_stop", "tram_stop", "swimming_pool"}
+                or re.search(r"\b(?:walkway|footbridge|footpath|pedestrian (?:bridge|entrance))\b",
+                             f"{name} {street}", re.I)
+                or any(access.get(tag) in {"no", "private"} for tag in ("access", "vehicle", "motor_vehicle", "motorcar"))):
+            continue
+        parking = kind in {"parking", "parking_entrance"}
+        street_address = bool(street and fields.get("housenumber"))
+        if not (parking or street_address) and fields.get("osm_key") in {"highway", "boundary", "place"}:
+            continue
+        access_hint = "Parking" if parking else "Street address" if street_address else None
+        parts = dict.fromkeys(part for part in (name, address, fields.get("city"), fields.get("state")) if part)
+        places.append({"name": name, "label": ", ".join(parts), "point": [lat, lon], "access": access_hint})
+    return places
+
+
+def find_route_places(query):
+    """Prioritize driving locations and look for a named car park when useful."""
+    places = _search_places(query)
+    name, separator, context = query.partition(",")
+    name_words = set(re.findall(r"[^\W_]+", name.casefold()))
+    if name_words and "parking" not in name_words and not any(place["access"] for place in places):
+        try:
+            parking = _search_places(f"{name} parking{separator}{context}")
+        except OSError:
+            parking = []
+        places.extend(place for place in parking if place["access"] == "Parking"
+                      and name_words <= set(re.findall(r"[^\W_]+", place["name"].casefold())))
+    places.sort(key=lambda place: place["access"] is None)
+    return places
+
+
+def compare_driving_routes(points, cache):
+    """Compare the same two anchors with and without the selected stop."""
+    start, stop, end = points
+    estimates = []
+    for route in ([start, end], [start, stop, end]):
+        key = route_key(route, DRIVE_MODE)
+        if key not in cache:
+            cache[key] = fetch_road_route(route, DRIVE_MODE)
+        estimates.append({**cache[key], "minutes": ceil(cache[key]["duration_s"] / 60)})
+    return estimates
 
 
 def directions_links(addresses, mode):
